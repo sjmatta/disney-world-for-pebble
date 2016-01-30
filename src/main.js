@@ -5,6 +5,25 @@ var httpTimeout = 10000;
 var appMessageQueue = [];
 var requesting;
 
+var log = {
+  debug: function(message) {
+    var logArray = JSON.parse(localStorage.getItem("wdw-log"));
+    if (!logArray) {
+      logArray = [];
+    }
+    logArray.push(message);
+    localStorage.setItem("wdw-log", JSON.stringify(logArray));
+  },
+
+  getJSONLog: function() {
+    return localStorage.getItem("wdw-log");
+  },
+
+  getLog: function() {
+    return JSON.parse(localStorage.getItem("wdw-log"));
+  },
+}
+
 // sendAppMessage
 // --------------
 // sends app message queue to pebble
@@ -23,7 +42,7 @@ var sendAppMessage = function() {
                         sendAppMessage();
                     }, appMessageTimeout);
                 }, function(e) {
-                    console.log("Faled sending AppMessage for transactionId: " + e.data.transactionId + ". Error: " + e.data.error.message);
+                    console.log("Failed sending AppMessage for transactionId: " + e.data.transactionId + ". Error: " + e.data.error.message);
                     appMessageQueue[0].transactionId = e.data.transactionId;
                     appMessageQueue[0].numTries++;
                     setTimeout(function() {
@@ -32,7 +51,7 @@ var sendAppMessage = function() {
                 }
             );
         } else {
-            console.log("Faled sending AppMessage after multiple attemps for transactionId: " + currentAppMessage.transactionId + ". Error: None. Here's the message: " + JSON.stringify(currentAppMessage.message));
+            console.log("Failed sending AppMessage after multiple attemps for transactionId: " + currentAppMessage.transactionId + ". Error: None. Here's the message: " + JSON.stringify(currentAppMessage.message));
         }
     }
 };
@@ -53,12 +72,13 @@ var sendError = function(errorTitle, errorDesc) {
 // Get a public token for use in wait times
 var getPublicToken = function() {
   console.log("Getting public token");
+  log.debug('Getting public token');
   var req = new XMLHttpRequest();
   var requestUrl = "https://authorization.go.com/token?assertion_type=public&client_id=WDPRO-MOBILE.MDX.WDW.IOS-PROD&client_secret=&grant_type=assertion";
   req.open('POST', requestUrl, false);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status + ', Headers: ' + JSON.stringify(req.headers));
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status + ', Headers: ' + JSON.stringify(req.headers));
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
@@ -70,10 +90,12 @@ var getPublicToken = function() {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     getPublicToken();
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
   };
   req.send(null);
 };
@@ -83,6 +105,7 @@ var getPublicToken = function() {
 // Get wait times for given park id
 var getWaitTimes = function(park) {
   console.log("Getting wait times");
+  log.debug('Getting wait times');
   if (requesting) {
     return;
   }
@@ -96,6 +119,7 @@ var getWaitTimes = function(park) {
   req.setRequestHeader("Authorization", "BEARER " + localStorage.publicToken);
   req.timeout = httpTimeout;
   req.onload = function(e) {
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     console.log("Ready state: " + req.readyState + " Status: " + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
@@ -105,16 +129,18 @@ var getWaitTimes = function(park) {
           entries.sort(function(a, b) {
             return (a.name > b.name ? 1 : a.name < b.name ? -1 : 0);
           });
+          var i = 0;
           entries.forEach(function(element, index, array) {
-            var i = 0;
             if (element.type == "Attraction") {
               var name = element.name.substring(0,20);
               var id = element.id;
               var waitTime;
               if (element.waitTime.postedWaitMinutes !== undefined) {
                 waitTime = element.waitTime.postedWaitMinutes + " minutes";
-              } else {
+              } else if (element.waitTime.rollUpWaitTimeMessage !== undefined){
                 waitTime = element.waitTime.rollUpWaitTimeMessage.substring(0,30);
+              } else if (element.waitTime.status == "Extra Magic Hours"){
+                waitTime = element.waitTime.status.substring(0,30);
               }
               appMessageQueue.push({'message': {
                 'index': i,
@@ -142,11 +168,13 @@ var getWaitTimes = function(park) {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     sendError("Oops!", "There was an error getting current wait times.");
     requesting = false;
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
     sendError("Oops!", "There was an error getting current wait times.");
     requesting = false;
   };
@@ -158,6 +186,7 @@ var getWaitTimes = function(park) {
 // Given an attraction ID, returns information about it
 var getAttractionInfo = function(attractionId) {
   console.log("Getting attraction info");
+  log.debug('Getting attraction info');
   if (requesting) {
     return;
   }
@@ -171,7 +200,7 @@ var getAttractionInfo = function(attractionId) {
   req.setRequestHeader("Authorization", "BEARER " + localStorage.publicToken);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status);
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
@@ -202,11 +231,13 @@ var getAttractionInfo = function(attractionId) {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     sendError("Oops!", "There was an error getting the attraction info.");
     requesting = false;
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
     sendError("Oops!", "There was an error getting the attraction info.");
     requesting = false;
   };
@@ -218,6 +249,7 @@ var getAttractionInfo = function(attractionId) {
 // Get entertainment for park id
 var getEntertainment = function(park) {
   console.log("Getting entertainment");
+  log.debug('Getting entertainment');
   if (requesting) {
     return;
   }
@@ -231,7 +263,7 @@ var getEntertainment = function(park) {
   req.setRequestHeader("Authorization", "BEARER " + localStorage.publicToken);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status);
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
@@ -240,16 +272,18 @@ var getEntertainment = function(park) {
           entries.sort(function(a, b) {
             return (a.name > b.name ? 1 : a.name < b.name ? -1 : 0);
           });
+          var i = 0;
           entries.forEach(function(element, index, array) {
-            var i = 0;
             if (element.type == "Entertainment") {
               var name = element.name.substring(0,20);
               var id = element.id;
               var waitTime;
               if (element.waitTime.postedWaitMinutes !== undefined) {
                 waitTime = element.waitTime.postedWaitMinutes + " minutes";
-              } else {
+              } else if (element.waitTime.rollUpWaitTimeMessage !== undefined){
                 waitTime = element.waitTime.rollUpWaitTimeMessage.substring(0,30);
+              } else if (element.waitTime.status == "Extra Magic Hours"){
+                waitTime = element.waitTime.status.substring(0,30);
               }
               appMessageQueue.push({'message': {
                 'index': i,
@@ -277,11 +311,13 @@ var getEntertainment = function(park) {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     sendError("Oops!", "There was an error getting entertainment.");
     requesting = false;
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
     sendError("Oops!", "There was an error getting entertainment.");
     requesting = false;
   };
@@ -309,6 +345,7 @@ function tConvert (time) {
 // Get the schedule for a given attraction ID
 var getSchedule = function(attractionId) {
   console.log("Getting schedule");
+  log.debug('Getting schedule');
   if (requesting) {
     return;
   }
@@ -332,7 +369,7 @@ var getSchedule = function(attractionId) {
   req.setRequestHeader("Authorization", "BEARER " + localStorage.publicToken);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status);
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
@@ -372,11 +409,13 @@ var getSchedule = function(attractionId) {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     sendError("Oops!", "There was an error getting the entertainment schedule.");
     requesting = false;
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
     sendError("Oops!", "There was an error getting the entertainment schedule.");
     requesting = false;
   };
@@ -387,12 +426,13 @@ var getSchedule = function(attractionId) {
 // --------------
 // Get a private token for itinerary access
 var getPrivateToken = function() {
+  log.debug('Getting private token');
   var req = new XMLHttpRequest();
   var requestUrl = "https://authorization.go.com/token?client_id=WDPRO-MOBILE.MDX.WDW.IOS-PROD&client_secret=&grant_type=password&password=" + encodeURIComponent(localStorage.password) + "&scope=RETURN_ALL_CLIENT_SCOPES&username=" + encodeURIComponent(localStorage.username);
   req.open('POST', requestUrl, false);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status);
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
@@ -405,9 +445,11 @@ var getPrivateToken = function() {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     getPrivateToken();
   };
   req.onerror = function() {
+    log.debug('Error');
     console.log("Connection failed");
   };
   req.send(null);
@@ -417,7 +459,7 @@ var getPrivateToken = function() {
 // ------
 // Get a user's xid from their swid
 var getXID = function() {
-  console.log('Getting XID');
+  log.debug('Getting XID');
   getPrivateToken();
   var req = new XMLHttpRequest();
   var requestUrl = "https://disneyparks.api.go.com/assembly/guest/id;swid=" + encodeURIComponent(localStorage.swid) + "/profile";
@@ -425,7 +467,7 @@ var getXID = function() {
   req.open('GET', requestUrl, false);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status);
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
@@ -442,9 +484,11 @@ var getXID = function() {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
     getXID();
   };
   req.send(null);
@@ -454,7 +498,7 @@ var getXID = function() {
 // ------------
 // Get guests itinerary
 var getItinerary = function() {
-  console.log('Getting itinerary');
+  log.debug('Getting itinerary');
   if (requesting) {
     return;
   }
@@ -480,20 +524,12 @@ var getItinerary = function() {
   req.setRequestHeader("Authorization", "BEARER " + localStorage.privateToken);
   req.timeout = httpTimeout;
   req.onload = function(e) {
-    console.log('Ready state: ' + req.readyState + ', Status: ' + req.status);
+    log.debug('Ready state: ' + req.readyState + ', Status: ' + req.status);
     if (req.readyState == 4) {
       if (req.status == 200) {
         if (req.responseText) {
           var response = JSON.parse(req.responseText);
           var itineraryCount = 0;
-
-          var existingPins = localStorage.getItem("wdw-pins");
-          console.log(existingPins);
-          if (!existingPins) {
-            localStorage.setItem("wdw-pins", JSON.stringify(new Array()));
-          }
-
-          var encounteredIDs = new Array();
           for (var i = 0; i < response.entries.length; i++) {
             var index = 0;
             var entry = response.entries[i];
@@ -508,40 +544,15 @@ var getItinerary = function() {
               diningReservation.name = entry.eventDining ? entry.eventDining.wdproEnterpriseProduct.name : entry.showDining.wdproEnterpriseProduct.name;
               diningReservation.type = "dining";
               if (today.getFullYear() == startDate.getFullYear() && today.getMonth() == startDate.getMonth() && today.getDate() == startDate.getDate()) {
-                appMessageQueue.push({"message": {
-                  "index": index,
-                  "name": diningReservation.name.substring(0,50),
-                  "type": diningReservation.type.substring(0,25),
-                  "time": diningReservation.time.substring(0,50)
+                console.log(diningReservation.name);
+                appMessageQueue.push({'message': {
+                  'index': index,
+                  'name': diningReservation.name.substring(0,50),
+                  'type': diningReservation.type.substring(0,25),
+                  'time': diningReservation.time.substring(0,50)
                 }});
                 index++;
                 itineraryCount++;
-              }
-
-              // Timeline
-              var pin = {
-                "id": "wdw-d" + entry.id,
-                "time": new Date(new Date(startDate).setDate(startDate.getDate())),
-                "layout": {
-                  "type": "genericPin",
-                  "title": diningReservation.name,
-                  "tinyIcon": "system://images/DINNER_RESERVATION",
-                },
-              };
-
-              encounteredIDs.push(pin.id);
-
-              var pinArray = JSON.parse(localStorage.getItem("wdw-pins"));
-              if (pinArray.indexOf(pin.id) < 0) {
-                pinArray.push(pin.id);
-                localStorage.setItem("wdw-pins", JSON.stringify(pinArray));
-                console.log("Inserting pin: " + JSON.stringify(pin));
-                // TODO: handle errors (pin too far in future, in the past, etc.)
-                insertUserPin(pin, function(responseText) {
-                  console.log("Insert result: " + responseText);
-                });
-              } else {
-                console.log(pin.id + " already exists as a pin.");
               }
             } else if (entry.type == "xpass") {
               var xpassReservation = {};
@@ -567,24 +578,6 @@ var getItinerary = function() {
               }
             }
           }
-
-          JSON.parse(localStorage.getItem("wdw-pins")).filter(function(i) {
-            return encounteredIDs.indexOf(i) < 0;
-          }).forEach(function(id) {
-            deleteUserPin(id, function(responseText) {
-              console.log("Delete result: " + responseText);
-              if (responseText.trim() === "OK") {
-                var oldList = JSON.parse(localStorage.getItem("wdw-pins"));
-                var index = oldList.indexOf(id);
-                if (index > -1) {
-                  console.log("Removing " + id + " from wdw-pins.")
-                  oldList.splice(index, 1);
-                  localStorage.setItem("wdw-pins", JSON.stringify(oldList));
-                }
-              }
-            });
-          });
-
           if (itineraryCount === 0) {
             // No plans for the day
             sendError("No Plans", "It looks like you have nothing scheduled for today.");
@@ -605,11 +598,13 @@ var getItinerary = function() {
   };
   req.ontimeout = function() {
     console.log("Timed out");
+    log.debug('Timed out');
     sendError("Oops!", "There was an error getting your itinerary.");
     requesting = false;
   };
   req.onerror = function() {
     console.log("Connection failed");
+    log.debug('Error');
     sendError("Oops!", "There was an error getting your itinerary.");
     requesting = false;
   };
@@ -620,11 +615,13 @@ var getItinerary = function() {
 Pebble.addEventListener("ready", function(e) {
   // JS app ready
   requesting = false;
+  //versionCheck('f813669a-50c6-42c4-a55b-744c6f3ca5a6', '1.7');
 });
 
 // RECEIVED APP MESSAGE
 Pebble.addEventListener("appmessage", function(e) {
   console.log("Received message: " + JSON.stringify(e));
+  log.debug('Received message: ' + JSON.stringify(e));
   if (e.payload.getWaitTimes) {
     // GET WAIT TIMES
     if (e.payload.getWaitTimes == "Magic Kingdom") {
@@ -672,7 +669,7 @@ Pebble.addEventListener("appmessage", function(e) {
 
 // SHOW CONFIG WINDOW
 Pebble.addEventListener("showConfiguration", function(e) {
-    Pebble.openURL("http://logicalpixels.com/mde/settings.html");
+    Pebble.openURL("http://logicalpixels.com/mde/settings.html#" + encodeURIComponent(log.getJSONLog()));
 });
 
 // CLOSED CONFIG WINDOW
@@ -690,88 +687,3 @@ Pebble.addEventListener("webviewclosed", function(e) {
       // No login info
     }
 });
-
-/******************************* timeline lib *********************************/
-
-// The timeline public URL root
-var API_URL_ROOT = 'https://timeline-api.getpebble.com/';
-
-/**
- * Send a request to the Pebble public web timeline API.
- * @param pin The JSON pin to insert. Must contain 'id' field.
- * @param type The type of request, either PUT or DELETE.
- * @param topics Array of topics if a shared pin, 'null' otherwise.
- * @param apiKey Timeline API key for this app, available from dev-portal.getpebble.com
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function timelineRequest(pin, type, topics, apiKey, callback) {
-  // User or shared?
-  var url = API_URL_ROOT + 'v1/' + ((topics != null) ? 'shared/' : 'user/') + 'pins/' + pin.id;
-
-  // Create XHR
-  var xhr = new XMLHttpRequest();
-  xhr.onload = function () {
-    console.log('timeline: response received: ' + this.responseText);
-    callback(this.responseText);
-  };
-  xhr.open(type, url);
-
-  // Set headers
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  if(topics != null) {
-    xhr.setRequestHeader('X-Pin-Topics', '' + topics.join(','));
-    xhr.setRequestHeader('X-API-Key', '' + apiKey);
-  }
-
-  // Get token
-  Pebble.getTimelineToken(function(token) {
-    // Add headers
-    xhr.setRequestHeader('X-User-Token', '' + token);
-
-    // Send
-    xhr.send(JSON.stringify(pin));
-    console.log('timeline: request sent.');
-  }, function(error) { console.log('timeline: error getting timeline token: ' + error); });
-}
-
-/**
- * Insert a pin into the timeline for this user.
- * @param pin The JSON pin to insert.
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function insertUserPin(pin, callback) {
-  timelineRequest(pin, 'PUT', null, null, callback);
-}
-
-/**
- * Delete a pin from the timeline for this user.
- * @param pin The JSON pin to delete.
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function deleteUserPin(pin, callback) {
-  timelineRequest(pin, 'DELETE', null, null, callback);
-}
-
-/**
- * Insert a pin into the timeline for these topics.
- * @param pin The JSON pin to insert.
- * @param topics Array of topics to insert pin to.
- * @param apiKey Timeline API key for this app, available from dev-portal.getpebble.com
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function insertSharedPin(pin, topics, apiKey, callback) {
-  timelineRequest(pin, 'PUT', topics, apiKey, callback);
-}
-
-/**
- * Delete a pin from the timeline for these topics.
- * @param pin The JSON pin to delete.
- * @param topics Array of topics to delete pin from.
- * @param apiKey Timeline API key for this app, available from dev-portal.getpebble.com
- * @param callback The callback to receive the responseText after the request has completed.
- */
-function deleteSharedPin(pin, topics, apiKey, callback) {
-  timelineRequest(pin, 'DELETE', topics, apiKey, callback);
-}
-
-/****************************** end timeline lib ******************************/
